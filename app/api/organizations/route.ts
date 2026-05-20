@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const org = await createOrganization(supabase, user.id, parsed.data.name)
+    const org = await createOrganization(user.id, parsed.data.name)
     await logAction({
       orgId: org.id,
       userId: user.id,

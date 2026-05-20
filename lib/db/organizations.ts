@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 
 export type Membership = {
   org_id: string
@@ -6,12 +6,36 @@ export type Membership = {
   organization: { id: string; name: string; created_at: string }
 }
 
+let serviceClient: SupabaseClient | null = null
+function getServiceClient(): SupabaseClient {
+  if (!serviceClient) {
+    serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    )
+  }
+  return serviceClient
+}
+
+/**
+ * Crea una org y agrega al user como owner.
+ *
+ * Usa service_role porque es una operación de **provisionamiento**:
+ * el user todavía no es miembro de ninguna org, así que las policies
+ * basadas en membership tienen un chicken-and-egg que es estándar
+ * en SaaS multi-tenant resolver con un endpoint admin-style.
+ *
+ * El caller (/api/organizations) ya validó la identidad con getUser().
+ * Las queries posteriores (documents, settings) sí pasan por RLS.
+ */
 export async function createOrganization(
-  db: SupabaseClient,
   userId: string,
   name: string
 ): Promise<{ id: string }> {
-  const { data: org, error: orgError } = await db
+  const admin = getServiceClient()
+
+  const { data: org, error: orgError } = await admin
     .from('mt_organizations')
     .insert({ name, created_by: userId })
     .select('id')
@@ -21,7 +45,7 @@ export async function createOrganization(
     throw new Error(orgError?.message ?? 'Error creando organización')
   }
 
-  const { error: memberError } = await db
+  const { error: memberError } = await admin
     .from('mt_org_members')
     .insert({
       org_id: org.id,
@@ -31,10 +55,12 @@ export async function createOrganization(
     })
 
   if (memberError) {
+    // Cleanup: borrar la org huérfana
+    await admin.from('mt_organizations').delete().eq('id', org.id)
     throw new Error(memberError.message)
   }
 
-  return { id: org.id }
+  return { id: org.id as string }
 }
 
 export async function getOrganizationForUser(
