@@ -3,7 +3,6 @@
 import { useState, FormEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { AuthShell, FormField, fieldClass, btnPrimary } from '@/components/AuthShell'
 
 export default function RegisterPage() {
@@ -18,32 +17,19 @@ export default function RegisterPage() {
     setLoading(true)
     setError('')
 
-    const supabase = createClient()
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { emailRedirectTo: undefined }
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
     })
+    const data = await res.json().catch(() => ({}))
 
-    if (error) {
-      setError(error.message)
+    if (!res.ok) {
+      setError(data.error ?? 'Error creando cuenta')
       setLoading(false)
       return
     }
 
-    if (data.session) {
-      router.push('/onboarding')
-      router.refresh()
-      return
-    }
-
-    // Si hay confirmación por email, intentamos login directo (la demo lo permite si Supabase Auth no exige confirmación)
-    const { error: signinError } = await supabase.auth.signInWithPassword({ email, password })
-    if (signinError) {
-      setError('Cuenta creada. Revisá tu mail para confirmar el acceso.')
-      setLoading(false)
-      return
-    }
     router.push('/onboarding')
     router.refresh()
   }
